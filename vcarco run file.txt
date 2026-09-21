@@ -6,3 +6,10 @@ create manually schema_metadata.json file
 
 python -m scripts.enrich_schema
 
+python -m scripts.discover_relationships
+
+python -m scripts.validate_relationships
+
+python -m scripts.export_relationship_review
+
+python -m scripts.build_graph_ready_relationships

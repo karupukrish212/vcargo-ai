@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     SCHEMA_CATALOG_PATH: str = "data/schema_catalog.json"
     SCHEMA_METADATA_PATH: str = "data/schema_metadata.json"
     ENRICHED_SCHEMA_CATALOG_PATH: str = "data/enriched_schema_catalog.json"
+    RELATIONSHIP_CANDIDATES_PATH: str = "data/relationship_candidates.json"
+    VALIDATED_RELATIONSHIPS_PATH: str = "data/validated_relationships.json"
+    RELATIONSHIP_REVIEW_PATH: str = "data/relationship_review.json"
+    GRAPH_READY_RELATIONSHIPS_PATH: str = "data/graph_ready_relationships.json"
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
