@@ -4,3 +4,4 @@ sqlalchemy
 pymysql
 pydantic-settings
 python-dotenv
+neo4j
