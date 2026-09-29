@@ -19,6 +19,9 @@ from app.schema.relationships.relationship_validator import (
 logger = logging.getLogger(__name__)
 
 
+EXPECTED_RELATIONSHIP_SCHEMA_VERSION = "2.0"
+
+
 def load_json(path: Path) -> dict:
     """
     Load JSON file as Python dictionary.
@@ -57,6 +60,7 @@ def save_json(
         "w",
         encoding="utf-8",
     ) as file:
+
         json.dump(
             data,
             file,
@@ -67,6 +71,41 @@ def save_json(
     temporary_path.replace(
         output_path
     )
+
+
+def validate_relationship_artifact(
+    candidate_data: dict,
+) -> None:
+    """
+    Validate relationship candidate artifact
+    before passing it to the validator.
+    """
+
+    version = candidate_data.get(
+        "relationship_schema_version"
+    )
+
+    if version != EXPECTED_RELATIONSHIP_SCHEMA_VERSION:
+
+        raise RelationshipValidationError(
+            "Unsupported relationship schema version. "
+            f"Expected "
+            f"{EXPECTED_RELATIONSHIP_SCHEMA_VERSION}, "
+            f"received {version!r}. "
+            "Re-run relationship discovery."
+        )
+
+    schema_hash = candidate_data.get(
+        "schema_hash"
+    )
+
+    if not schema_hash:
+
+        raise RelationshipValidationError(
+            "Relationship candidate file does not "
+            "contain schema_hash. "
+            "Re-run relationship discovery."
+        )
 
 
 def main() -> None:
@@ -86,7 +125,7 @@ def main() -> None:
     )
 
     logger.info(
-        "Starting relationship validation"
+        "Starting enterprise relationship validation"
     )
 
     try:
@@ -107,7 +146,7 @@ def main() -> None:
 
         # -------------------------------------------------
         # Step 2:
-        # Load discovered relationships
+        # Load relationship candidates
         # -------------------------------------------------
 
         logger.info(
@@ -121,8 +160,30 @@ def main() -> None:
 
         # -------------------------------------------------
         # Step 3:
-        # Convert JSON dictionary
-        # into Pydantic model
+        # Validate artifact version
+        # -------------------------------------------------
+
+        validate_relationship_artifact(
+            candidate_data
+        )
+
+        logger.info(
+            "Relationship schema version: %s",
+            candidate_data.get(
+                "relationship_schema_version"
+            ),
+        )
+
+        logger.info(
+            "Relationship schema hash: %s",
+            candidate_data.get(
+                "schema_hash"
+            ),
+        )
+
+        # -------------------------------------------------
+        # Step 4:
+        # Convert JSON -> Pydantic model
         # -------------------------------------------------
 
         relationship_catalog = (
@@ -139,8 +200,8 @@ def main() -> None:
         )
 
         # -------------------------------------------------
-        # Step 4:
-        # Create validator
+        # Step 5:
+        # Create enterprise validator
         # -------------------------------------------------
 
         validator = RelationshipValidator(
@@ -157,8 +218,8 @@ def main() -> None:
         )
 
         # -------------------------------------------------
-        # Step 5:
-        # Validate relationships
+        # Step 6:
+        # Validate
         # -------------------------------------------------
 
         validated_catalog = (
@@ -166,8 +227,8 @@ def main() -> None:
         )
 
         # -------------------------------------------------
-        # Step 6:
-        # Convert Pydantic model to JSON-safe dict
+        # Step 7:
+        # Convert Pydantic -> JSON-safe dict
         # -------------------------------------------------
 
         output_data = (
@@ -177,8 +238,8 @@ def main() -> None:
         )
 
         # -------------------------------------------------
-        # Step 7:
-        # Save validation result
+        # Step 8:
+        # Save validated relationship catalog
         # -------------------------------------------------
 
         save_json(
@@ -191,7 +252,8 @@ def main() -> None:
         # -------------------------------------------------
 
         logger.info(
-            "Relationship validation completed successfully"
+            "Enterprise relationship validation "
+            "completed successfully"
         )
 
         logger.info(

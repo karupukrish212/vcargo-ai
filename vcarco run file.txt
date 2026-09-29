@@ -13,3 +13,39 @@ python -m scripts.validate_relationships
 python -m scripts.export_relationship_review
 
 python -m scripts.build_graph_ready_relationships
+
+
+
+ENTERPRISE GRADE
+****************
+python -m scripts.enrich_schema
+
+python -m scripts.discover_relationships
+
+python -m scripts.validate_relationships
+
+python -m scripts.export_relationship_review
+
+
+Create a normal graph:
+**********************
+python -m scripts.test_schema_graph
+
+Create a text format file for every table and columns for all tables:-
+***********************************************************************
+python -m scripts.build_schema_documents
+
+
+python -m scripts.test_embeddings
+
+
+python -m scripts.test_hybrid_retriever
+
+
+python -m scripts.test_graph_aware_retriever
+
+python -m scripts.build_faiss_index
+
+python -m scripts.test_faiss_index
+
+python -m scripts.test_context_builder

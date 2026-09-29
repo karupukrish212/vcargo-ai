@@ -27,6 +27,15 @@ class Settings(BaseSettings):
     VALIDATED_RELATIONSHIPS_PATH: str = "data/validated_relationships.json"
     RELATIONSHIP_REVIEW_PATH: str = "data/relationship_review.json"
     GRAPH_READY_RELATIONSHIPS_PATH: str = "data/graph_ready_relationships.json"
+
+    EMBEDDING_MODEL_NAME: str = "BAAI/bge-small-en-v1.5"
+
+    EMBEDDING_DEVICE: str = "cpu"
+
+    EMBEDDING_BATCH_SIZE: int = 32
+
+    EMBEDDING_NORMALIZE: bool = True
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
