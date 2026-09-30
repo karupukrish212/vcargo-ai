@@ -1,6 +1,8 @@
 import json
 import logging
 from pathlib import Path
+from app.agents.sql.prompt_builder import SQLPromptBuilder
+
 
 from app.core.logging_config import (
     configure_logging,
@@ -495,6 +497,32 @@ def main() -> None:
         context = context_builder.build(
             response=response
         )
+
+        # SQL PROMPT GENERATION Started
+
+        prompt_builder = (
+            SQLPromptBuilder()
+        )
+
+        sql_prompt = (
+            prompt_builder.build(
+                context=context
+            )
+        )
+
+        print(
+            "\n========== SQL GENERATION PROMPT =========="
+        )
+
+        print(
+            sql_prompt
+        )
+
+        print(
+            "==========================================="
+        )
+
+        # =====================SQL PROMPT GENERATION Ended ================================
 
         logger.info(
             "Aggregation Object: %s",

@@ -3565,6 +3565,30 @@ class GraphRAGContextBuilder:
             )
 
             lines.append(
+                "  - Data Type: "
+                f"{temporal_filter.data_type}"
+            )
+
+            lines.append(
+                "  - Requires Conversion: "
+                f"{temporal_filter.requires_conversion}"
+            )
+
+            if temporal_filter.stored_format is not None:
+
+                lines.append(
+                    "  - Stored Format: "
+                    f"{temporal_filter.stored_format}"
+                )
+
+            if temporal_filter.mysql_format is not None:
+
+                lines.append(
+                    "  - MySQL Format: "
+                    f"{temporal_filter.mysql_format}"
+                )
+
+            lines.append(
                 "  - Start Date Inclusive: "
                 f"{temporal_filter.start_date.isoformat()}"
             )

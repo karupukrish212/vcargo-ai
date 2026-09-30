@@ -2,6 +2,7 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
+from pydantic import model_validator
 
 
 class Settings(BaseSettings):
@@ -19,6 +20,42 @@ class Settings(BaseSettings):
     DB_CHARSET: str = "utf8mb4"
     DB_CONNECT_TIMEOUT: int = 10
 
+
+    # ------------------------------
+    # LLM Provider
+    # ------------------------------
+
+    LLM_PROVIDER: str = "ollama"
+
+    # ------------------------------
+    # Ollama
+    # ------------------------------
+
+    OLLAMA_BASE_URL: str = (
+        "http://localhost:11434"
+    )
+
+    OLLAMA_MODEL: str = "llama3.2"
+
+    # ------------------------------
+    # Groq
+    # ------------------------------
+
+    GROQ_API_KEY: str | None = None
+
+    GROQ_MODEL: str | None = None
+
+    # ------------------------------
+    # Common LLM settings
+    # ------------------------------
+
+    LLM_TIMEOUT: int = 60
+
+    LLM_ALLOW_FALLBACK: bool = False
+
+    LLM_FALLBACK_PROVIDER: str | None = None
+
+
     # SCHEMA_CATALOG_PATH: str = "data/schema_catalog.json"
     SCHEMA_CATALOG_PATH: str = "data/schema_catalog.json"
     SCHEMA_METADATA_PATH: str = "data/schema_metadata.json"
@@ -35,6 +72,100 @@ class Settings(BaseSettings):
     EMBEDDING_BATCH_SIZE: int = 32
 
     EMBEDDING_NORMALIZE: bool = True
+
+
+    @model_validator(mode="after")
+    def validate_llm_configuration(self):
+        provider = (
+            self.LLM_PROVIDER
+            .strip()
+            .lower()
+        )
+
+        supported_providers = {
+            "groq",
+            "ollama",
+        }
+
+        if provider not in supported_providers:
+            raise ValueError(
+                "Unsupported LLM_PROVIDER: "
+                f"{self.LLM_PROVIDER}. "
+                "Supported providers are: "
+                "groq, ollama."
+            )
+
+        # -----------------------------------------
+        # GROQ VALIDATION
+        # -----------------------------------------
+
+        if provider == "groq":
+
+            if not self.GROQ_API_KEY:
+                raise ValueError(
+                    "GROQ_API_KEY is required "
+                    "when LLM_PROVIDER=groq."
+                )
+
+            if not self.GROQ_MODEL:
+                raise ValueError(
+                    "GROQ_MODEL is required "
+                    "when LLM_PROVIDER=groq."
+                )
+
+        # -----------------------------------------
+        # OLLAMA VALIDATION
+        # -----------------------------------------
+
+        if provider == "ollama":
+
+            if not self.OLLAMA_BASE_URL:
+                raise ValueError(
+                    "OLLAMA_BASE_URL is required "
+                    "when LLM_PROVIDER=ollama."
+                )
+
+            if not self.OLLAMA_MODEL:
+                raise ValueError(
+                    "OLLAMA_MODEL is required "
+                    "when LLM_PROVIDER=ollama."
+                )
+
+        # -----------------------------------------
+        # FALLBACK VALIDATION
+        # -----------------------------------------
+
+        if self.LLM_ALLOW_FALLBACK:
+
+            if not self.LLM_FALLBACK_PROVIDER:
+                raise ValueError(
+                    "LLM_FALLBACK_PROVIDER is required "
+                    "when LLM_ALLOW_FALLBACK=true."
+                )
+
+            fallback_provider = (
+                self.LLM_FALLBACK_PROVIDER
+                .strip()
+                .lower()
+            )
+
+            if fallback_provider not in supported_providers:
+                raise ValueError(
+                    "Unsupported "
+                    "LLM_FALLBACK_PROVIDER: "
+                    f"{self.LLM_FALLBACK_PROVIDER}."
+                )
+
+            if fallback_provider == provider:
+                raise ValueError(
+                    "LLM_FALLBACK_PROVIDER cannot "
+                    "be the same as LLM_PROVIDER."
+                )
+
+        return self
+
+
+
 
     model_config = SettingsConfigDict(
         env_file=".env",
