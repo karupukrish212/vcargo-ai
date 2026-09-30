@@ -49,3 +49,7 @@ python -m scripts.build_faiss_index
 python -m scripts.test_faiss_index
 
 python -m scripts.test_context_builder
+
+
+-------------LLM INTEGRATION-------------
+python -m scripts.test_groq_provider

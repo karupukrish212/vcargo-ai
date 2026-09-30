@@ -2,6 +2,13 @@ import json
 import logging
 from pathlib import Path
 from app.agents.sql.prompt_builder import SQLPromptBuilder
+from app.agents.sql.sql_generator import (
+    SQLGenerator,
+)
+import asyncio
+from app.agents.sql.sql_validator import (
+    SQLValidator,
+)
 
 
 from app.core.logging_config import (
@@ -52,7 +59,7 @@ FAISS_METADATA_PATH = Path(
     "data/schema_index_metadata.json"
 )
 
-def main() -> None:
+async def main() -> None:
 
     configure_logging()
 
@@ -485,6 +492,9 @@ def main() -> None:
         "driver wise trip count",
     )
 
+    sql_generator = SQLGenerator()
+    validator = SQLValidator()
+
 
     for query in test_queries:
 
@@ -495,7 +505,48 @@ def main() -> None:
         )
 
         context = context_builder.build(
-            response=response
+            response=response   
+        )
+
+        # -------------------------------------------------
+        # Generate SQL
+        # -------------------------------------------------
+
+        # if response.query == "last week vehicle wise revenue":
+
+        #     sql_generator = (
+        #         SQLGenerator()
+        #     )
+
+        generated_sql = (
+            await sql_generator.generate(
+                context=context
+            )
+        )
+
+        validated_sql = validator.validate(
+            sql=generated_sql,
+            context=context,
+        )
+
+        print(
+            "\n========== GENERATED SQL =========="
+        )
+
+        print(
+            generated_sql
+        )
+
+        print(
+            "==================================="
+        )
+
+        print(
+            "\n========== VALIDATED SQL =========="
+        )
+
+        print(
+            validated_sql
         )
 
         # SQL PROMPT GENERATION Started
@@ -597,4 +648,7 @@ def main() -> None:
         )
 
 if __name__ == "__main__":
-    main()
+
+    asyncio.run(
+        main()
+    )

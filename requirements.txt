@@ -6,3 +6,5 @@ pydantic-settings
 python-dotenv
 sentence-transformers
 numpy
+groq
+sqlglot

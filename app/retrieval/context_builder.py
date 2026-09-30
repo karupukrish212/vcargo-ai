@@ -343,6 +343,68 @@ class GraphRAGContextBuilder:
             )
         )
 
+        # -------------------------------------------------
+        # Ensure aggregation columns are included
+        # in trusted schema context
+        # -------------------------------------------------
+
+        if aggregation_context is not None:
+
+            # ---------------------------------------------
+            # Measure column
+            # Example:
+            # COUNT(trip.tripid)
+            # SUM(trip.revenue)
+            # ---------------------------------------------
+
+            context_tables_tuple = (
+                self._ensure_required_context_column(
+                    context_tables=(
+                        context_tables_tuple
+                    ),
+                    table_name=(
+                        aggregation_context
+                        .measure_table
+                    ),
+                    column_name=(
+                        aggregation_context
+                        .measure_column
+                    ),
+                )
+            )
+
+            # ---------------------------------------------
+            # GROUP BY column
+            # Example:
+            # tdriver.name
+            # tvehicle.vehiclenumber
+            # customer.customername
+            # ---------------------------------------------
+
+            if (
+                aggregation_context.group_by_table
+                is not None
+                and
+                aggregation_context.group_by_column
+                is not None
+            ):
+
+                context_tables_tuple = (
+                    self._ensure_required_context_column(
+                        context_tables=(
+                            context_tables_tuple
+                        ),
+                        table_name=(
+                            aggregation_context
+                            .group_by_table
+                        ),
+                        column_name=(
+                            aggregation_context
+                            .group_by_column
+                        ),
+                    )
+                )
+        
         logger.info(
             "Aggregation context resolved. "
             "Query='%s' Context=%s",
@@ -2307,6 +2369,37 @@ class GraphRAGContextBuilder:
         return selected_column
     
 
+    @staticmethod
+    def _format_temporal_boundary(
+        value: date,
+        data_type: str,
+    ) -> str:
+        """
+        Convert trusted date boundaries into
+        SQL-compatible values based on the
+        physical column data type.
+        """
+
+        normalized_type = (
+            data_type
+            .strip()
+            .upper()
+        )
+
+        if normalized_type in {
+            "DATETIME",
+            "TIMESTAMP",
+        }:
+            return (
+                f"{value.isoformat()} "
+                "00:00:00.000000"
+            )
+
+        if normalized_type == "DATE":
+            return value.isoformat()
+
+        return value.isoformat()
+
     def _get_column_metadata(
     self,
     table_name: str,
@@ -2790,6 +2883,7 @@ class GraphRAGContextBuilder:
         )
 
 
+
     # =====================================================
     # COLUMN SELECTION
     # =====================================================
@@ -3168,6 +3262,8 @@ class GraphRAGContextBuilder:
             selected
         )
     
+
+
     def _build_trusted_joins(
         self,
         anchor_table: str,
@@ -3588,16 +3684,29 @@ class GraphRAGContextBuilder:
                     f"{temporal_filter.mysql_format}"
                 )
 
-            lines.append(
-                "  - Start Date Inclusive: "
-                f"{temporal_filter.start_date.isoformat()}"
+            start_value = (
+                self._format_temporal_boundary(
+                    temporal_filter.start_date,
+                    temporal_filter.data_type,
+                )
+            )
+
+            end_value = (
+                self._format_temporal_boundary(
+                    temporal_filter.end_date_exclusive,
+                    temporal_filter.data_type,
+                )
             )
 
             lines.append(
-                "  - End Date Exclusive: "
-                f"{temporal_filter.end_date_exclusive.isoformat()}"
+                "  - Start Value Inclusive: "
+                f"{start_value}"
             )
 
+            lines.append(
+                "  - End Value Exclusive: "
+                f"{end_value}"
+            )
 
         # -------------------------------------------------
         # Aggregation
@@ -3686,3 +3795,87 @@ class GraphRAGContextBuilder:
             lines
         )
 
+    def _ensure_required_context_column(
+        self,
+        context_tables: tuple[ContextTable, ...],
+        table_name: str,
+        column_name: str,
+    ) -> tuple[ContextTable, ...]:
+
+        updated_tables: list[ContextTable] = []
+
+        table_found = False
+
+        for table in context_tables:
+
+            if table.table_name != table_name:
+
+                updated_tables.append(table)
+                continue
+
+            table_found = True
+
+            column_exists = any(
+                column.column_name == column_name
+                for column in table.columns
+            )
+
+            if column_exists:
+
+                updated_tables.append(table)
+                continue
+
+            metadata = self._get_column_metadata(
+                table_name,
+                column_name,
+            )
+
+            if metadata is None:
+
+                raise ValueError(
+                    "Required context column not found "
+                    f"in schema graph: "
+                    f"{table_name}.{column_name}"
+                )
+
+            required_column = ContextColumn(
+                table_name=table_name,
+                column_name=column_name,
+                business_name=getattr(
+                    metadata,
+                    "business_name",
+                    None,
+                ),
+                semantic_type=getattr(
+                    metadata,
+                    "semantic_type",
+                    None,
+                ),
+                retrieval_score=0.0,
+                matched_terms=(),
+            )
+
+            updated_table = table.model_copy(
+                update={
+                    "columns": (
+                        *table.columns,
+                        required_column,
+                    )
+                }
+            )
+
+            updated_tables.append(
+                updated_table
+            )
+
+        if not table_found:
+
+            raise ValueError(
+                "Required aggregation table "
+                f"not found in GraphRAG context: "
+                f"{table_name}"
+            )
+
+        return tuple(
+            updated_tables
+        )
