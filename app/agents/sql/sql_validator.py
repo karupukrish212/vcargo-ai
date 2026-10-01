@@ -172,6 +172,32 @@ class SQLValidator:
         )
 
         # -------------------------------------------------
+        # Trusted temporal filter
+        # -------------------------------------------------
+
+        self._validate_temporal_filter(
+            statement=statement,
+            context=context,
+            alias_map=alias_map,
+        )
+
+        self._validate_where_clause(
+            statement=statement,
+            context=context,
+            alias_map=alias_map,
+        )
+
+        # -------------------------------------------------
+        # Trusted aggregation
+        # -------------------------------------------------
+
+        self._validate_aggregation(
+            statement=statement,
+            context=context,
+            alias_map=alias_map,
+        )
+
+        # -------------------------------------------------
         # Normalize SQL
         # -------------------------------------------------
 
@@ -545,6 +571,489 @@ class SQLValidator:
                         f"{left_reference} = "
                         f"{right_reference}"
                     )
+
+    # =====================================================
+    # Temporal filter validation
+    # =====================================================
+
+    def _validate_temporal_filter(
+        self,
+        statement: exp.Select,
+        context: GraphRAGContext,
+        alias_map: dict[str, str],
+    ) -> None:
+
+        temporal = context.temporal_filter
+
+        if temporal is None:
+            return
+
+        expected_column = (
+            f"{temporal.table_name.lower()}."
+            f"{temporal.column_name.lower()}"
+        )
+
+        start_value = (
+            self._format_temporal_boundary(
+                temporal.start_date,
+                temporal.data_type,
+            )
+        )
+
+        end_value = (
+            self._format_temporal_boundary(
+                temporal.end_date_exclusive,
+                temporal.data_type,
+            )
+        )
+
+        start_found = False
+        end_found = False
+
+        # ---------------------------------------------
+        # >= start boundary
+        # ---------------------------------------------
+
+        for condition in statement.find_all(
+            exp.GTE
+        ):
+
+            if not isinstance(
+                condition.left,
+                exp.Column,
+            ):
+                continue
+
+            if not isinstance(
+                condition.right,
+                exp.Literal,
+            ):
+                continue
+
+            column_name = (
+                self._qualified_column_name(
+                    condition.left,
+                    alias_map,
+                )
+            )
+
+            literal_value = (
+                str(
+                    condition.right.this
+                )
+            )
+
+            if (
+                column_name == expected_column
+                and
+                literal_value == start_value
+            ):
+                start_found = True
+
+        # ---------------------------------------------
+        # < end boundary
+        # ---------------------------------------------
+
+        for condition in statement.find_all(
+            exp.LT
+        ):
+
+            if not isinstance(
+                condition.left,
+                exp.Column,
+            ):
+                continue
+
+            if not isinstance(
+                condition.right,
+                exp.Literal,
+            ):
+                continue
+
+            column_name = (
+                self._qualified_column_name(
+                    condition.left,
+                    alias_map,
+                )
+            )
+
+            literal_value = (
+                str(
+                    condition.right.this
+                )
+            )
+
+            if (
+                column_name == expected_column
+                and
+                literal_value == end_value
+            ):
+                end_found = True
+
+        if not start_found:
+
+            raise SQLValidationError(
+                "Trusted temporal start boundary "
+                "is missing or incorrect."
+            )
+
+        if not end_found:
+
+            raise SQLValidationError(
+                "Trusted temporal end boundary "
+                "is missing or incorrect."
+            )
+
+    # =====================================================
+    # WHERE clause validation
+    # =====================================================
+
+    def _validate_where_clause(
+        self,
+        statement: exp.Select,
+        context: GraphRAGContext,
+        alias_map: dict[str, str],
+    ) -> None:
+
+        where_expression = (
+            statement.args.get(
+                "where"
+            )
+        )
+
+        temporal = context.temporal_filter
+
+        # -------------------------------------------------
+        # No trusted filters exist
+        # -------------------------------------------------
+
+        if temporal is None:
+
+            if where_expression is not None:
+
+                raise SQLValidationError(
+                    "WHERE clause is not allowed "
+                    "because no trusted filter "
+                    "exists in GraphRAG context."
+                )
+
+            return
+
+        # -------------------------------------------------
+        # Temporal filter exists
+        # WHERE clause is mandatory
+        # -------------------------------------------------
+
+        if where_expression is None:
+
+            raise SQLValidationError(
+                "Trusted temporal WHERE clause "
+                "is missing."
+            )
+
+        conditions = (
+            self._flatten_and_conditions(
+                where_expression.this
+            )
+        )
+
+        expected_column = (
+            f"{temporal.table_name.lower()}."
+            f"{temporal.column_name.lower()}"
+        )
+
+        start_value = (
+            self._format_temporal_boundary(
+                temporal.start_date,
+                temporal.data_type,
+            )
+        )
+
+        end_value = (
+            self._format_temporal_boundary(
+                temporal.end_date_exclusive,
+                temporal.data_type,
+            )
+        )
+
+        expected_conditions = {
+            (
+                "gte",
+                expected_column,
+                start_value,
+            ),
+            (
+                "lt",
+                expected_column,
+                end_value,
+            ),
+        }
+
+        actual_conditions: list[
+            tuple[str, str, str]
+        ] = []
+
+        for condition in conditions:
+
+            # ---------------------------------------------
+            # >= condition
+            # ---------------------------------------------
+
+            if isinstance(
+                condition,
+                exp.GTE,
+            ):
+
+                operator = "gte"
+
+            # ---------------------------------------------
+            # < condition
+            # ---------------------------------------------
+
+            elif isinstance(
+                condition,
+                exp.LT,
+            ):
+
+                operator = "lt"
+
+            else:
+
+                raise SQLValidationError(
+                    "Untrusted WHERE condition "
+                    "detected: "
+                    f"{condition.sql(dialect='mysql')}"
+                )
+
+            if not isinstance(
+                condition.left,
+                exp.Column,
+            ):
+
+                raise SQLValidationError(
+                    "WHERE condition must use "
+                    "a trusted column."
+                )
+
+            if not isinstance(
+                condition.right,
+                exp.Literal,
+            ):
+
+                raise SQLValidationError(
+                    "WHERE condition must use "
+                    "a trusted literal value."
+                )
+
+            column_name = (
+                self._qualified_column_name(
+                    condition.left,
+                    alias_map,
+                )
+            )
+
+            literal_value = str(
+                condition.right.this
+            )
+
+            actual_conditions.append(
+                (
+                    operator,
+                    column_name,
+                    literal_value,
+                )
+            )
+
+        # -------------------------------------------------
+        # Exactly the trusted temporal predicates only
+        # -------------------------------------------------
+
+        if len(actual_conditions) != 2:
+
+            raise SQLValidationError(
+                "Unexpected WHERE conditions "
+                "detected. Only trusted temporal "
+                "conditions are allowed."
+            )
+
+        if set(actual_conditions) != expected_conditions:
+
+            raise SQLValidationError(
+                "WHERE clause does not exactly match "
+                "the trusted GraphRAG temporal filter."
+            )
+
+    @staticmethod
+    def _format_temporal_boundary(
+        value,
+        data_type: str,
+    ) -> str:
+
+        normalized_type = (
+            data_type
+            .strip()
+            .upper()
+        )
+
+        if normalized_type in {
+            "DATETIME",
+            "TIMESTAMP",
+        }:
+
+            return (
+                f"{value.isoformat()} "
+                "00:00:00.000000"
+            )
+
+        return value.isoformat()
+
+    # =====================================================
+    # Aggregation validation
+    # =====================================================
+
+    def _validate_aggregation(
+        self,
+        statement: exp.Select,
+        context: GraphRAGContext,
+        alias_map: dict[str, str],
+    ) -> None:
+
+        aggregation = context.aggregation
+
+        if aggregation is None:
+            return
+
+        expected_measure = (
+            f"{aggregation.measure_table.lower()}."
+            f"{aggregation.measure_column.lower()}"
+        )
+
+        aggregation_type = (
+            aggregation
+            .aggregation_type
+            .lower()
+        )
+
+        aggregate_class = None
+
+        if aggregation_type == "sum":
+            aggregate_class = exp.Sum
+
+        elif aggregation_type == "count":
+            aggregate_class = exp.Count
+
+        elif aggregation_type == "average":
+            aggregate_class = exp.Avg
+
+        else:
+
+            raise SQLValidationError(
+                "Unsupported trusted aggregation: "
+                f"{aggregation_type}"
+            )
+
+        aggregate_found = False
+
+        for aggregate_expression in (
+            statement.find_all(
+                aggregate_class
+            )
+        ):
+
+            measure = (
+                aggregate_expression.this
+            )
+
+            if not isinstance(
+                measure,
+                exp.Column,
+            ):
+                continue
+
+            actual_measure = (
+                self._qualified_column_name(
+                    measure,
+                    alias_map,
+                )
+            )
+
+            if actual_measure == expected_measure:
+
+                aggregate_found = True
+                break
+
+        if not aggregate_found:
+
+            raise SQLValidationError(
+                "Generated SQL does not use "
+                "the trusted aggregation measure: "
+                f"{aggregation_type.upper()}"
+                f"({expected_measure})"
+            )
+
+        # ---------------------------------------------
+        # GROUP BY validation
+        # ---------------------------------------------
+
+        if (
+            aggregation.group_by_table is None
+            or
+            aggregation.group_by_column is None
+        ):
+            return
+
+        expected_group_by = (
+            f"{aggregation.group_by_table.lower()}."
+            f"{aggregation.group_by_column.lower()}"
+        )
+
+        group_expression = (
+            statement.args.get(
+                "group"
+            )
+        )
+
+        if group_expression is None:
+
+            raise SQLValidationError(
+                "Trusted GROUP BY column "
+                "is missing."
+            )
+
+        group_by_found = False
+
+        for expression in (
+            group_expression.expressions
+        ):
+
+            if not isinstance(
+                expression,
+                exp.Column,
+            ):
+                continue
+
+            actual_group_by = (
+                self._qualified_column_name(
+                    expression,
+                    alias_map,
+                )
+            )
+
+            if (
+                actual_group_by
+                == expected_group_by
+            ):
+
+                group_by_found = True
+                break
+
+        if not group_by_found:
+
+            raise SQLValidationError(
+                "Generated SQL does not use "
+                "the trusted GROUP BY column: "
+                f"{expected_group_by}"
+            )
 
     # =====================================================
     # Flatten JOIN conditions

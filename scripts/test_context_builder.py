@@ -495,6 +495,8 @@ async def main() -> None:
     sql_generator = SQLGenerator()
     validator = SQLValidator()
 
+    vehicle_revenue_context = None
+
 
     for query in test_queries:
 
@@ -507,6 +509,10 @@ async def main() -> None:
         context = context_builder.build(
             response=response   
         )
+
+        if query == "last week vehicle wise revenue":
+
+            vehicle_revenue_context = context
 
         # -------------------------------------------------
         # Generate SQL
@@ -646,6 +652,219 @@ async def main() -> None:
             "=======================================",
             context.llm_context,
         )
+
+
+    
+
+
+    print(
+    "\n========== SQL VALIDATOR SECURITY TESTS =========="
+)
+
+    security_test_sqls = [
+        # ---------------------------------------------
+        # DELETE must be rejected
+        # ---------------------------------------------
+        "DELETE FROM trip",
+
+        # ---------------------------------------------
+        # Untrusted table must be rejected
+        # ---------------------------------------------
+        "SELECT password FROM users",
+
+        # ---------------------------------------------
+        # Untrusted column must be rejected
+        # ---------------------------------------------
+        "SELECT trip.secret_column FROM trip",
+
+        # ---------------------------------------------
+        # SELECT * must be rejected
+        # ---------------------------------------------
+        "SELECT * FROM trip",
+
+        # ---------------------------------------------
+        # Multiple statements must be rejected
+        # ---------------------------------------------
+        "SELECT trip.tripid FROM trip; DELETE FROM trip",
+
+        # ---------------------------------------------
+        # Wrong / hallucinated JOIN must be rejected
+        # ---------------------------------------------
+        """
+        SELECT tdriver.name
+        FROM trip
+        JOIN tdriver
+            ON trip.vehicle = tdriver.tdriverid
+        """,
+    ]
+
+    for unsafe_sql in security_test_sqls:
+
+        try:
+
+            validator.validate(
+                sql=unsafe_sql,
+                context=context,
+            )
+
+            print(
+                "\n❌ SECURITY TEST FAILED"
+            )
+
+            print(
+                unsafe_sql
+            )
+
+        except Exception as exc:
+
+            print(
+                "\n✅ SECURITY TEST PASSED"
+            )
+
+            print(
+                f"Rejected: {unsafe_sql.strip()}"
+            )
+
+            print(
+                f"Reason: {exc}"
+            )
+
+    print(
+        "\n=================================================="
+    )
+
+    print(
+    "\n========== TEMPORAL & AGGREGATION TESTS =========="
+    )
+
+    if vehicle_revenue_context is None:
+
+        raise RuntimeError(
+            "Vehicle revenue context was not created."
+        )
+
+
+    semantic_test_sqls = [
+
+        # -------------------------------------------------
+        # Wrong temporal start date
+        # -------------------------------------------------
+        """
+        SELECT
+            tvehicle.vehiclenumber,
+            SUM(trip.revenue)
+        FROM trip
+        JOIN tvehicle
+            ON trip.vehicle = tvehicle.tvehicleid
+        WHERE
+            trip.tripstarttime >=
+            '2026-09-20 00:00:00.000000'
+            AND trip.tripstarttime <
+            '2026-09-28 00:00:00.000000'
+        GROUP BY
+            tvehicle.vehiclenumber
+        """,
+
+        # -------------------------------------------------
+        # Wrong aggregation type
+        # Expected SUM, but using AVG
+        # -------------------------------------------------
+        """
+        SELECT
+            tvehicle.vehiclenumber,
+            AVG(trip.revenue)
+        FROM trip
+        JOIN tvehicle
+            ON trip.vehicle = tvehicle.tvehicleid
+        WHERE
+            trip.tripstarttime >=
+            '2026-09-21 00:00:00.000000'
+            AND trip.tripstarttime <
+            '2026-09-28 00:00:00.000000'
+        GROUP BY
+            tvehicle.vehiclenumber
+        """,
+
+        # -------------------------------------------------
+        # Wrong GROUP BY
+        # trip.vehicle is allowed column,
+        # but trusted grouping is
+        # tvehicle.vehiclenumber
+        # -------------------------------------------------
+        """
+        SELECT
+            tvehicle.vehiclenumber,
+            SUM(trip.revenue)
+        FROM trip
+        JOIN tvehicle
+            ON trip.vehicle = tvehicle.tvehicleid
+        WHERE
+            trip.tripstarttime >=
+            '2026-09-21 00:00:00.000000'
+            AND trip.tripstarttime <
+            '2026-09-28 00:00:00.000000'
+        GROUP BY
+            trip.vehicle
+        """,
+
+        # -------------------------------------------------
+        # Unrequested extra WHERE filter
+        # -------------------------------------------------
+        """
+        SELECT
+            tvehicle.vehiclenumber,
+            SUM(trip.revenue)
+        FROM trip
+        JOIN tvehicle
+            ON trip.vehicle = tvehicle.tvehicleid
+        WHERE
+            trip.tripstarttime >=
+            '2026-09-21 00:00:00.000000'
+            AND trip.tripstarttime <
+            '2026-09-28 00:00:00.000000'
+            AND trip.revenue > 0
+        GROUP BY
+            tvehicle.vehiclenumber
+        """,
+    ]
+
+
+    for test_sql in semantic_test_sqls:
+
+        try:
+
+            validator.validate(
+                sql=test_sql,
+                context=vehicle_revenue_context,
+            )
+
+            print(
+                "\n❌ SEMANTIC TEST FAILED"
+            )
+
+            print(
+                test_sql.strip()
+            )
+
+        except Exception as exc:
+
+            print(
+                "\n✅ SEMANTIC TEST PASSED"
+            )
+
+            print(
+                f"Rejected: {test_sql.strip()}"
+            )
+
+            print(
+                f"Reason: {exc}"
+            )
+
+
+    print(
+        "\n=================================================="
+    )
+
 
 if __name__ == "__main__":
 
